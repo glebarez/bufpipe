@@ -1,4 +1,4 @@
-module github.com/acomagu/bufpipe
+module github.com/glebarez/bufpipe
 
 go 1.12
 

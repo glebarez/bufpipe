@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acomagu/bufpipe"
+	"github.com/glebarez/bufpipe"
 	"github.com/matryer/is"
 )
 
@@ -144,4 +144,3 @@ func TestPipeReader_WriterCloseNoDeadlock(t *testing.T) {
 
 	<-done
 }
-

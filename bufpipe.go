@@ -41,6 +41,17 @@ type PipeWriter struct {
 // can also be used to set the initial size of the internal buffer for writing.
 // To do that, buf should have the desired capacity but a length of zero.
 func New(buf []byte) (*PipeReader, *PipeWriter) {
+	r, w, _ := newPipe(buf)
+	return r, w
+}
+
+// NewBuffer is like New but also returns *bytes.Buffer, which is used internally.
+// This may be useful to put grown buffers pack to buffer pool.
+func NewBuffer(buf []byte) (*PipeReader, *PipeWriter, *bytes.Buffer) {
+	return newPipe(buf)
+}
+
+func newPipe(buf []byte) (*PipeReader, *PipeWriter, *bytes.Buffer) {
 	p := &pipe{
 		buf:  bytes.NewBuffer(buf),
 		cond: sync.NewCond(new(sync.Mutex)),
@@ -49,7 +60,8 @@ func New(buf []byte) (*PipeReader, *PipeWriter) {
 			pipe: p,
 		}, &PipeWriter{
 			pipe: p,
-		}
+		},
+		p.buf
 }
 
 // Read implements the standard Read interface: it reads data from the pipe,
