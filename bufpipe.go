@@ -14,6 +14,7 @@ type pipe struct {
 	cond       *sync.Cond
 	buf        *bytes.Buffer
 	rerr, werr error
+	maxUnread  int
 }
 
 // A PipeReader is the read half of a pipe.
@@ -41,20 +42,26 @@ type PipeWriter struct {
 // can also be used to set the initial size of the internal buffer for writing.
 // To do that, buf should have the desired capacity but a length of zero.
 func New(buf []byte) (*PipeReader, *PipeWriter) {
-	r, w, _ := newPipe(buf)
+	r, w, _ := newPipe(buf, 0)
+	return r, w
+}
+
+func NewLimited(buf []byte, maxUnread int) (*PipeReader, *PipeWriter) {
+	r, w, _ := newPipe(buf, maxUnread)
 	return r, w
 }
 
 // NewBuffer is like New but also returns *bytes.Buffer, which is used internally.
 // This may be useful to put grown buffers pack to buffer pool.
 func NewBuffer(buf []byte) (*PipeReader, *PipeWriter, *bytes.Buffer) {
-	return newPipe(buf)
+	return newPipe(buf, 0)
 }
 
-func newPipe(buf []byte) (*PipeReader, *PipeWriter, *bytes.Buffer) {
+func newPipe(buf []byte, maxUnread int) (*PipeReader, *PipeWriter, *bytes.Buffer) {
 	p := &pipe{
-		buf:  bytes.NewBuffer(buf),
-		cond: sync.NewCond(new(sync.Mutex)),
+		buf:       bytes.NewBuffer(buf),
+		cond:      sync.NewCond(new(sync.Mutex)),
+		maxUnread: maxUnread,
 	}
 	return &PipeReader{
 			pipe: p,
@@ -71,6 +78,7 @@ func newPipe(buf []byte) (*PipeReader, *PipeWriter, *bytes.Buffer) {
 func (r *PipeReader) Read(data []byte) (int, error) {
 	r.cond.L.Lock()
 	defer r.cond.L.Unlock()
+	defer r.cond.Signal()
 
 RETRY:
 	n, err := r.buf.Read(data)
@@ -111,8 +119,17 @@ func (w *PipeWriter) Write(data []byte) (int, error) {
 	w.cond.L.Lock()
 	defer w.cond.L.Unlock()
 
-	if w.werr != nil {
-		return 0, w.werr
+	for {
+		if w.werr != nil {
+			return 0, w.werr
+		}
+
+		// restrict writing until unread byte count is affordable
+		if w.maxUnread > 0 && w.buf.Len() > w.maxUnread {
+			w.cond.Wait()
+			continue
+		}
+		break
 	}
 
 	n, err := w.buf.Write(data)
